@@ -1,0 +1,19 @@
+[
+    {
+      "url": {
+        "scheme": "http",
+        "Host": "localhost:8081"
+      },
+      "active_conns": 0,
+      "weight": 10
+    },
+    {
+      "url": {
+        "scheme": "http",
+        "host": "localhost:8082"
+      },
+      "active_conns": 0,
+      "weight": 1
+    }
+  ]
+  

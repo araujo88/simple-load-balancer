@@ -8,6 +8,7 @@ A simple load balancer implemented in Go that routes incoming HTTP requests to m
 - Random Algorithm for Load Balancing
 - Weighted Random Algorithm for Load Balancing
 - Dynamic Weighted Random Algorithm for Load Balancing
+- Least Response Time Algorithm for Load Balancing
 - Atomic updates for active connection counts
 - Simple HTTP backend servers for demonstration
 - Supports multiple backend servers
@@ -47,7 +48,7 @@ Navigate back to the root directory and start the load balancer:
 
 ```bash
 cd ..
-go run main.go
+go run . -algorithm=<algorithm-type>
 ```
 
 Your load balancer should now be running and forwarding incoming HTTP requests to the backend servers.
@@ -77,7 +78,9 @@ The Weighted Random method assigns a static weight to each backend server. The p
 
 This is an extension of the Weighted Random algorithm. In this method, the weight of each server is determined dynamically based on the inverse of its current number of active connections. This allows the load balancer to adapt to the real-time load on each server.
 
-Each algorithm has its own advantages and trade-offs, making them suitable for different kinds of applications and scenarios. You can select the algorithm that best fits your specific use case.
+### Least Response Time
+
+The Least Response Time algorithm selects the server that has the lowest response time for a new request. Implementing this algorithm would involve measuring the response time of each server and directing incoming requests to the server with the least recent response time.
 
 ## How to Contribute
 
@@ -90,3 +93,21 @@ Each algorithm has its own advantages and trade-offs, making them suitable for d
 ## License
 
 This project is open source and available under the [GNU GENERAL PUBLIC LICENSE](LICENSE).
+
+## TODOs
+
+ - Incorporate moving averages to measure response time
+ - Handle failed requests
+ - Incorporate health checks
+ - Measure CPU and disk usage
+ - Metrics and logging
+ - Rate limiting
+ - Connection draining
+ - Circuit breaker pattern
+ - Sticky sessions
+ - DDoS Protection
+ - Response Caching
+ - IPv6 Support
+ - WebSockets Support
+ - API for Management
+ - Automated Tests
