@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -8,6 +9,12 @@ import (
 	"strconv"
 	"strings"
 )
+
+type Metrics struct {
+	CPUUsage    float64 `json:"cpu_usage"`
+	DiskUsage   float64 `json:"disk_usage"`
+	MemoryUsage float64 `json:"memory_usage"`
+}
 
 func getCPUUtilization() (float64, error) {
 	cmd := exec.Command("./bin/cpuusage") // assuming the C program is compiled and present in the same directory.
@@ -85,6 +92,7 @@ func main() {
 
 	http.HandleFunc("/hello", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("Hello, world"))
+		r.Response.StatusCode = http.StatusOK
 		fmt.Println("Hello, world!")
 	})
 
@@ -97,6 +105,7 @@ func main() {
 		// Convert the float64 value to a string and then to []byte
 		utilizationStr := fmt.Sprintf("%.2f%%", utilization)
 		w.Write([]byte(utilizationStr))
+		r.Response.StatusCode = http.StatusOK
 		fmt.Printf("CPU Utilization: %s\n", utilizationStr)
 	})
 
@@ -109,6 +118,7 @@ func main() {
 		// Convert the float64 value to a string and then to []byte
 		utilizationStr := fmt.Sprintf("%.2f%%", utilization)
 		w.Write([]byte(utilizationStr))
+		r.Response.StatusCode = http.StatusOK
 		fmt.Printf("Memory Utilization: %s\n", utilizationStr)
 	})
 
@@ -121,9 +131,43 @@ func main() {
 		// Convert the float64 value to a string and then to []byte
 		utilizationStr := fmt.Sprintf("%.2f%%", utilization)
 		w.Write([]byte(utilizationStr))
+		r.Response.StatusCode = http.StatusOK
 		fmt.Printf("Memory Utilization: %s\n", utilizationStr)
 	})
 
+	http.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
+		cpuUsage, err := getCPUUtilization()
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Error getting cpu utilization: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		diskUsage, err := getDiskUtilization()
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Error getting disk utilization: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		memoryUsage, err := getMemoryUtilization()
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Error getting memory utilization: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		metrics := Metrics{
+			CPUUsage:    cpuUsage,    // replace with the actual value
+			DiskUsage:   diskUsage,   // replace with the actual value
+			MemoryUsage: memoryUsage, // replace with the actual value
+		}
+
+		// Set Content-Type as json
+		w.Header().Set("Content-Type", "application/json")
+
+		// Write JSON response
+		if err := json.NewEncoder(w).Encode(metrics); err != nil {
+			http.Error(w, fmt.Sprintf("Error encoding response: %v", err), http.StatusInternalServerError)
+		}
+	})
 	port := os.Args[1]
 
 	fmt.Println("Server running on :" + port)

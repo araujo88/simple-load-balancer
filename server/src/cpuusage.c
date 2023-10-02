@@ -1,10 +1,3 @@
-// In this program:
-
-// We read CPU statistics from /proc/stat.
-// We then sleep for 1 second and read the statistics again.
-// We calculate the CPU utilization during that second.
-// This C program should be executed in a Linux environment.
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
