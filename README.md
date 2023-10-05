@@ -74,13 +74,17 @@ The Random method randomly selects a backend server for each incoming request. A
 
 The Weighted Random method assigns a static weight to each backend server. The probability of selecting a particular server is proportional to its weight. Servers with higher weights will receive more requests than those with lower weights.
 
+### Least Response Time
+
+The Least Response Time algorithm selects the server that has the lowest response time for a new request. Implementing this algorithm would involve measuring the response time of each server and directing incoming requests to the server with the least recent response time.
+
 ### Dynamic Weighted Random
 
 This is an extension of the Weighted Random algorithm. In this method, the weight of each server is determined dynamically based on the inverse of its current number of active connections. This allows the load balancer to adapt to the real-time load on each server.
 
-### Least Response Time
+### Dynamic Weighted Random II
 
-The Least Response Time algorithm selects the server that has the lowest response time for a new request. Implementing this algorithm would involve measuring the response time of each server and directing incoming requests to the server with the least recent response time.
+Similar to Dynamic Weighted Random, but including the server response time as an additional parameter.
 
 ## How to Contribute
 

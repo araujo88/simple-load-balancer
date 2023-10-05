@@ -2,24 +2,28 @@ package lb
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"math/rand"
-	"net/http"
-	"net/http/httputil"
 	"net/url"
 	"os"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/valyala/fasthttp"
 )
 
 type Server struct {
-	URL           *url.URL      `json:"url"`
-	ActiveConns   int32         `json:"active_conns"`
-	ResponseTime  time.Duration `json:"-"`
-	ResponseMutex sync.Mutex    `json:"-"`
-	Weight        int           `json:"weight"`
+	URL               *url.URL      `json:"url"`
+	ActiveConns       int32         `json:"active_conns"`
+	ResponseTime      time.Duration `json:"response_time"`
+	ResponseMutex     sync.Mutex    `json:"-"`
+	Weight            int           `json:"weight"`
+	CPUUtilization    float64       `json:"cpu_utilization"`
+	MemoryUtilization float64       `json:"memory_utilization"`
+	DiskUtilization   float64       `json:"disk_utilization"`
 }
 
 type LoadBalancer struct {
@@ -96,6 +100,26 @@ func (lb *LoadBalancer) getWeightedRandomBackend() *Server {
 	return lb.servers[len(lb.servers)-1] // fallback, should not happen
 }
 
+// Load balancing logic: Least Response Time
+func (lb *LoadBalancer) getLeastResponseTimeBackend() *Server {
+	lb.serverLock.Lock()
+	defer lb.serverLock.Unlock()
+
+	var minResponseTimeServer *Server
+	for _, server := range lb.servers {
+		server.ResponseMutex.Lock()
+		if minResponseTimeServer == nil || server.ResponseTime < minResponseTimeServer.ResponseTime {
+			minResponseTimeServer = server
+		}
+		server.ResponseMutex.Unlock()
+	}
+
+	// Increment the active connection count for this server
+	atomic.AddInt32(&minResponseTimeServer.ActiveConns, 1)
+
+	return minResponseTimeServer
+}
+
 // Load balancing logic: Weighted Random Algorithm combined with Least Connections
 func (lb *LoadBalancer) getDynamicWeightedRandomBackend() *Server {
 	// Calculate the total dynamic weight
@@ -121,24 +145,29 @@ func (lb *LoadBalancer) getDynamicWeightedRandomBackend() *Server {
 	return nil // fallback, should not happen
 }
 
-// Load balancing logic: Least Response Time
-func (lb *LoadBalancer) getLeastResponseTimeBackend() *Server {
-	lb.serverLock.Lock()
-	defer lb.serverLock.Unlock()
-
-	var minResponseTimeServer *Server
+// Load balancing logic: Weighted Random Algorithm combined with Least Connections and Least Response Time
+func (lb *LoadBalancer) getConnAndResponseTimeWeightedBackend() *Server {
+	// Calculate the total dynamic weight
+	totalWeight := int32(0)
 	for _, server := range lb.servers {
-		server.ResponseMutex.Lock()
-		if minResponseTimeServer == nil || server.ResponseTime < minResponseTimeServer.ResponseTime {
-			minResponseTimeServer = server
-		}
-		server.ResponseMutex.Unlock()
+		// The weight is inversely proportional to the number of active connections and the response time.
+		// Add 1 to both active connections and response time to avoid division by zero.
+		weight := 1.0 / (float64(atomic.LoadInt32(&server.ActiveConns)) + 1.0 + float64(server.ResponseTime)/float64(time.Millisecond))
+		totalWeight += int32(weight * 1000) // multiply by 1000 to avoid working with very small numbers
 	}
 
-	// Increment the active connection count for this server
-	atomic.AddInt32(&minResponseTimeServer.ActiveConns, 1)
+	// Select a backend server based on dynamic weight
+	randomValue := int32(rand.Intn(int(totalWeight)))
+	for _, server := range lb.servers {
+		weight := 1.0 / (float64(atomic.LoadInt32(&server.ActiveConns)) + 1.0 + float64(server.ResponseTime)/float64(time.Millisecond))
+		randomValue -= int32(weight * 1000) // subtracting the weight as integer
+		if randomValue < 0 {
+			atomic.AddInt32(&server.ActiveConns, 1) // Increment active connections
+			return server
+		}
+	}
 
-	return minResponseTimeServer
+	return nil // fallback, should not happen
 }
 
 // Decrement connection count for a server
@@ -146,9 +175,9 @@ func releaseBackend(server *Server) {
 	atomic.AddInt32(&server.ActiveConns, -1)
 }
 
-// HTTP handler
-func ProxyHandler(lb *LoadBalancer) func(http.ResponseWriter, *http.Request) {
-	return func(w http.ResponseWriter, r *http.Request) {
+// HTTP handler for fasthttp
+func ProxyHandler(lb *LoadBalancer) fasthttp.RequestHandler {
+	return func(ctx *fasthttp.RequestCtx) {
 		var backend *Server
 
 		switch lb.algorithmType {
@@ -158,17 +187,47 @@ func ProxyHandler(lb *LoadBalancer) func(http.ResponseWriter, *http.Request) {
 			backend = lb.getLeastConnectionsBackend()
 		case "weightrand":
 			backend = lb.getWeightedRandomBackend()
-		case "dynamic":
-			backend = lb.getDynamicWeightedRandomBackend()
 		case "leasttime":
 			backend = lb.getLeastResponseTimeBackend()
+		case "dynamic":
+			backend = lb.getDynamicWeightedRandomBackend()
+		case "dynamic2":
+			backend = lb.getConnAndResponseTimeWeightedBackend()
 		default:
 			log.Fatalf("Invalid algorithm type: %s", lb.algorithmType)
 		}
 
 		start := time.Now()
-		proxy := httputil.NewSingleHostReverseProxy(backend.URL)
-		proxy.ServeHTTP(w, r)
+
+		// Manually handle the reverse proxy
+		req := fasthttp.AcquireRequest()
+		defer fasthttp.ReleaseRequest(req)
+
+		// Set the correct URI for backend while maintaining path and query
+		backendURI := fmt.Sprintf("%s%s?%s", backend.URL.String(), ctx.Path(), ctx.QueryArgs().String())
+		req.SetRequestURI(backendURI)
+
+		// Copy method, headers, and body from original request
+		req.Header.SetMethodBytes(ctx.Method())
+		ctx.Request.Header.CopyTo(&req.Header)
+		req.Header.SetHost(backend.URL.Host) // Fix the host header
+		req.SetBody(ctx.PostBody())
+
+		resp := fasthttp.AcquireResponse()
+		defer fasthttp.ReleaseResponse(resp)
+
+		err := fasthttp.Do(req, resp)
+		if err != nil {
+			fmt.Printf("Error when proxying to backend: %v\n", err)
+			ctx.Error("Failed to forward the request", fasthttp.StatusInternalServerError)
+			return
+		}
+
+		// Copy the response from the backend to the original response
+		ctx.Response.SetStatusCode(resp.StatusCode())
+		resp.Header.CopyTo(&ctx.Response.Header)
+		ctx.Write(resp.Body())
+
 		duration := time.Since(start)
 
 		backend.ResponseMutex.Lock()

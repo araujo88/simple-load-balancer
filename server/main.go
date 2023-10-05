@@ -92,7 +92,6 @@ func main() {
 
 	http.HandleFunc("/hello", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("Hello, world"))
-		r.Response.StatusCode = http.StatusOK
 		fmt.Println("Hello, world!")
 	})
 
@@ -155,9 +154,9 @@ func main() {
 		}
 
 		metrics := Metrics{
-			CPUUsage:    cpuUsage,    // replace with the actual value
-			DiskUsage:   diskUsage,   // replace with the actual value
-			MemoryUsage: memoryUsage, // replace with the actual value
+			CPUUsage:    cpuUsage,
+			DiskUsage:   diskUsage,
+			MemoryUsage: memoryUsage,
 		}
 
 		// Set Content-Type as json
